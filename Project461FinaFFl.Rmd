@@ -1,0 +1,541 @@
+---
+title: "Project461"
+author: "Tyler Boerkoel"
+date: "2026-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2) 
+library(caret)
+
+#emissions_data <- read.csv("emissions_high_granularity.csv")
+emissions_data <- read.csv("C:/Users/tyler/Downloads/emissions_high_granularity.csv")
+
+emissions_data <- emissions_data%>%drop_na(commodity,
+                                          parent_type,
+                                          total_emissions_MtCO2e,
+                                          fugitive_methane_emissions_MtCH4,
+                                          own_fuel_use_emissions_MtCO2,
+                                          )
+emissions_data2 <- emissions_data[c("commodity",
+                                    "parent_type",
+                                    "total_emissions_MtCO2e",
+                                    "fugitive_methane_emissions_MtCH4",
+                                    "own_fuel_use_emissions_MtCO2",
+                                    "year")]
+emissions_data_24= emissions_data2 %>%
+  filter(year == "2024")
+
+data_ng_oil=emissions_data_24 %>%
+  filter(commodity %in% c("Natural Gas", "Oil & NGL"))
+
+```
+Exploratory Data Anaylsis
+
+```{r}
+table(emissions_data_24$commodity)
+```
+```{r}
+ggplot(emissions_data_24, aes(x=commodity))+geom_bar()+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+```{r}
+table(emissions_data_24$parent_type)
+```
+
+```{r}
+ggplot(emissions_data_24, aes(x=parent_type))+geom_bar()
+```
+```{r}
+summary(emissions_data_24$"total_emissions_MtCO2e")
+```
+
+```{r}
+summary(emissions_data_24$"fugitive_methane_emissions_MtCH4")
+```
+
+```{r}
+summary(emissions_data_24$"own_fuel_use_emissions_MtCO2")
+```
+
+```{r}
+ggplot(emissions_data_24, aes(x=total_emissions_MtCO2e))+geom_histogram()
+```
+```{r}
+ggplot(data_ng_oil, aes(x = total_emissions_MtCO2e)) +
+  geom_histogram( bins =20) +
+ facet_grid(~commodity)
+```
+
+```{r}
+ggplot(emissions_data_24, aes(x=fugitive_methane_emissions_MtCH4))+geom_histogram()
+```
+
+```{r}
+ggplot(data_ng_oil, aes(x = fugitive_methane_emissions_MtCH4)) +
+  geom_histogram( bins =20) +
+ facet_grid(~commodity)
+```
+
+```{r}
+ggplot(emissions_data_24, aes(x=own_fuel_use_emissions_MtCO2))+geom_histogram()
+```
+```{r}
+state_nation=emissions_data_24 %>%
+  filter(parent_type %in% c("Investor-owned Company", "State-owned Entity"))
+
+ggplot(state_nation, aes(x=own_fuel_use_emissions_MtCO2))+geom_histogram()+
+  facet_grid(~parent_type)
+```
+
+
+1.
+
+Let $\mu_1$ be the true mean total emissions of Natural Gas plants
+Let $\mu_2$ be the true mean total emissions of Oil & NGL plants
+$H_0:\mu_1=\mu_2$ $H_a:\mu_1\neq\mu_2$
+
+
+```{r}
+xbar_1 <- emissions_data_24 %>%
+  filter(commodity == "Natural Gas") %>%
+  pull(total_emissions_MtCO2e) %>%
+  mean()
+
+# A pipline that finds the sample mean of group 2
+xbar_2 <- emissions_data_24 %>%
+  filter(commodity == "Oil & NGL") %>%
+  pull(total_emissions_MtCO2e) %>%
+  mean()
+
+
+# The observed difference in sample means
+xbar_diff <- xbar_1 - xbar_2
+xbar_diff
+```
+```{r}
+
+ggplot(data_ng_oil, aes(x = total_emissions_MtCO2e)) +
+  geom_histogram( bins =20) +
+ facet_grid(~commodity)
+```
+```{r}
+set.seed(20)
+mu_diff <- replicate(10000, {
+  
+  # generate new randomly permuted age groups
+  data_ng_oil$permuted_commodity <- sample(data_ng_oil$commodity, replace = FALSE)
+
+  # recompute the difference in means
+  mu_1 <- data_ng_oil %>%
+    filter(permuted_commodity == "Natural Gas") %>%
+    pull(total_emissions_MtCO2e) %>%
+    mean()
+  mu_2 <- data_ng_oil %>%
+    filter(permuted_commodity == "Oil & NGL") %>%
+    pull(total_emissions_MtCO2e) %>%
+    mean()
+  mu_1 - mu_2
+})
+```
+
+```{r}
+data.frame(mu_diff) %>% ggplot(aes(x = mu_diff)) +
+  geom_histogram() +
+  geom_vline(xintercept = xbar_diff, color = "red")+
+  geom_vline(xintercept = -xbar_diff, color = "red")
+```
+
+```{r}
+pvalue <- mean(mu_diff > abs(xbar_diff)) + mean(mu_diff < -abs(xbar_diff))
+pvalue
+```
+There is little evidence to support rejecting the null hypothesis or conclude that the total emissions from Natural Gas Plants are different than Oil & NG Plants.
+
+
+Question 2. Test whether the mean fugitive methane emissions of Natural Gas plants differ significantly from Oil & NGL plants.
+
+H0: mu fugitive methane emissions of Natural Gas plants = mu fugitive methane emissions of Oil & NGL plants.
+
+HA: mu fugitive methane emissions of Natural Gas plants =/ mu fugitive methane emissions of Oil & NGL plants.
+
+```{r}
+xbar_natural_gas <- emissions_data_24 %>%
+  filter(commodity == "Natural Gas") %>%
+  pull(fugitive_methane_emissions_MtCH4) %>%
+  mean()
+
+xbar_oil_ngl <- emissions_data_24 %>%
+  filter(commodity == "Oil & NGL") %>%
+  pull(fugitive_methane_emissions_MtCH4) %>%
+  mean()
+
+#The difference in means
+xbar_diff <- xbar_natural_gas - xbar_oil_ngl
+xbar_diff
+```
+```{r}
+plot_data<-emissions_data_24 %>% filter(commodity == "Natural Gas" | commodity == "Oil & NGL")
+ggplot(plot_data, aes(x = fugitive_methane_emissions_MtCH4)) +
+  geom_histogram( bins =20) +
+  facet_grid(~commodity)+
+  xlab("Methane (Million Metric Tons)")
+
+```
+
+```{r}
+set.seed(20)
+mu_diff <- replicate(10000, {
+  # generate new randomly permuted age groups
+  emissions_data_24$permuted <- sample(emissions_data_24$commodity)
+
+  # recompute the difference in means
+  mu_A <- emissions_data_24 %>%
+    filter(permuted == "Natural Gas") %>%
+    pull(fugitive_methane_emissions_MtCH4) %>%
+    mean()
+  mu_B <- emissions_data_24 %>%
+    filter(permuted == "Oil & NGL") %>%
+    pull(fugitive_methane_emissions_MtCH4) %>%
+    mean()
+  mu_A - mu_B
+})
+```
+
+```{r}
+data.frame(mu_diff) %>% ggplot(aes(x = mu_diff)) +
+  geom_histogram(bins = 10) +
+  geom_vline(xintercept = xbar_diff, color = "red")+
+  geom_vline(xintercept = -xbar_diff, color = "red")
+
+```
+
+```{r}
+2 * mean(mu_diff > xbar_diff)
+```
+Strong evidence against the null, fugitive methane emissions of Natural Gas plants is significantly different from fugitive methane emissions of Oil & NGL plants.
+
+ 
+
+
+
+
+Question 3. Using a permutation test, determine whether the mean own fuel use emissions differs significantly between state-owned and investor-owned
+
+H0: mu own fuel use emissions state-owned = mu own fuel use emissions investor-owned 
+
+HA: mu own fuel use emissions state-owned =/ mu own fuel use emissions investor-owned 
+
+
+```{r}
+xbar_1 <- emissions_data_24 %>%
+  filter(parent_type == "State-owned Entity") %>%
+  pull(own_fuel_use_emissions_MtCO2) %>%
+  mean()
+
+xbar_2 <- emissions_data_24 %>%
+  filter(parent_type == "Investor-owned Company") %>%
+  pull(own_fuel_use_emissions_MtCO2) %>%
+  mean()
+
+
+# The observed difference in sample means
+xbar_diff <- xbar_1 - xbar_2
+xbar_diff
+```
+
+```{r}
+plot_data2 <- emissions_data_24%>% filter(parent_type == "Investor-owned Company" | parent_type == "State-owned Entity")
+ggplot(plot_data2, aes(x = own_fuel_use_emissions_MtCO2)) +
+  geom_histogram( bins =20) +
+  facet_grid(~parent_type)+
+  xlab("Own Fuel Use CO2 Emissions (Million Metric Tons)")
+```
+
+
+```{r}
+set.seed(20)
+mu_diff <- replicate(10000, {
+  
+  emissions_data_24$permuted_parent <- sample(emissions_data_24$parent_type, replace = FALSE)
+
+  # recompute the difference in means
+  mu_1 <- emissions_data_24 %>%
+    filter(permuted_parent == "State-owned Entity") %>%
+    pull(own_fuel_use_emissions_MtCO2) %>%
+    mean()
+  mu_2 <- emissions_data_24 %>%
+    filter(permuted_parent == "Investor-owned Company") %>%
+    pull(own_fuel_use_emissions_MtCO2) %>%
+    mean()
+  mu_1 - mu_2
+})
+```
+
+
+```{r}
+data.frame(mu_diff) %>% ggplot(aes(x = mu_diff)) +
+  geom_histogram() +
+  geom_vline(xintercept = xbar_diff, color = "red")+
+  geom_vline(xintercept = -xbar_diff, color = "red")
+```
+
+```{r}
+pvalue <- mean(mu_diff > abs(xbar_diff)) + mean(mu_diff < -abs(xbar_diff))
+pvalue
+```
+Somewhat strong evidence against the null,  state-owned mean own fuel use emissions are statistically different from investor-owned mean own fuel use emissions. 
+
+
+
+
+Question 4. 95% confidence interval for the mean total emissions of Natural Gas plants
+
+```{r}
+nat_gas_data <- emissions_data_24%>%filter(commodity == "Natural Gas")
+
+xbar <- nat_gas_data %>%
+  pull(total_emissions_MtCO2e) %>%
+  mean()
+
+xbar
+```
+
+```{r}
+ggplot(nat_gas_data, aes(x = total_emissions_MtCO2e)) +
+  geom_histogram(bins = 14) +
+  geom_vline(xintercept = xbar, color = "red")+
+  ggtitle("Natural Gas Total CO2 Emissions")+
+  xlab("Own Fuel Use CO2 Emissions (Million Metric Tons)")
+```
+```{r}
+set.seed(20)
+xbar_resample  <- replicate(10000, {
+  tot_co2_emissions_resample <- sample(nat_gas_data$total_emissions_MtCO2e, replace = TRUE)
+  mean(tot_co2_emissions_resample)
+})
+```
+
+
+```{r}
+ggplot(data.frame(xbar_resample), aes(x = xbar_resample)) +
+  geom_histogram(bins=20) +
+  ggtitle("Estimated sampling distribution of xbar")
+```
+```{r}
+set.seed(20)
+quantile(xbar_resample, c(0.025, 0.975))
+
+```
+```{r}
+ggplot(data.frame(xbar_resample), aes(x = xbar_resample)) +
+  geom_histogram(bins=20) +
+  geom_vline(xintercept = c(64.65, 125.36), col = "blue")+
+  ggtitle("95% Confidence interval of the Mean Total CO2 Emissions of Natural Gas Plants")+
+  annotate("text", x=90, y=2000, label= "95% area", color = 'blue', size =5)+
+  annotate("text", x=54, y=2000, label= "2.5% area", color = 'blue', size =5)+
+  annotate("text", x=140, y=2000, label= "2.5% area", color = 'blue', size =5)+
+  annotate("text", x=125, y=0, label= "upper", color = 'red', size =4)+
+  annotate("text", x=65, y=0, label= "lower", color = 'red', size =4)
+```
+The confidence interval calculated allows us to estimate the mean total CO2 emissions of Natural Gas plants
+
+Specifically, we are 95% confident that the mean total CO2 emissions of Natural Gas plants is between 64.65603 and 125.36208 million metric tons.
+
+5.
+```{r}
+data_ng=emissions_data_24 %>%
+  filter(commodity %in% c("Natural Gas"))
+
+data_oil=emissions_data_24 %>%
+  filter(commodity %in% c("Oil & NGL"))
+
+# xbar calculation
+xbar <- data_oil %>%
+  pull(total_emissions_MtCO2e) %>%
+  mean()
+
+xbar
+```
+```{r}
+ggplot(data_oil, aes(x = total_emissions_MtCO2e)) +
+  geom_histogram(bins = 14) +
+  geom_vline(xintercept = xbar, color = "red")+
+  ggtitle("Total Emissions")
+```
+
+```{r}
+set.seed(20)
+xbar_resample2  <- replicate(10000, {
+  total_emission_resample <- sample(data_oil$total_emissions_MtCO2e, replace = TRUE)
+  mean(total_emission_resample)
+})
+```
+
+```{r}
+ggplot(data.frame(xbar_resample2), aes(x = xbar_resample2)) +
+  geom_histogram(bins=20) +
+  ggtitle("Estimated sampling distribution of xbar")
+```
+```{r}
+quantile(xbar_resample2, c(0.025, 0.975))
+```
+
+```{r}
+ggplot(data.frame(xbar_resample2), aes(x = xbar_resample2)) +
+  geom_histogram(bins=20) +
+  geom_vline(xintercept = c(87.69, 169.58), col = "blue")+
+  ggtitle("95% Confidence interval  mean total emissions of Oil & NGL plants")
+```
+The confidence interval calculated allows us to estimate the mean total emissions of Oil & NG plants
+
+Specifically, we are 95% confident that the mean total CO2 emissions of Oil & NG plants is between 87.69647 and 169.57829 million metric tons.
+6.
+```{r}
+set.seed(20)
+
+fugi_data_ng= emissions_data_24%>%
+  filter(commodity %in% c("Natural Gas")) %>%
+  pull(fugitive_methane_emissions_MtCH4)
+
+xbar_boot_1  <- replicate(10000, {
+  fugi_data_ng_resample <- sample(fugi_data_ng, 
+                                       replace = TRUE)
+  mean(fugi_data_ng_resample)
+})
+```
+
+```{r}
+set.seed(20)
+
+fugi_data_oil=emissions_data_24 %>%
+  filter(commodity %in% c("Oil & NGL")) %>%
+  pull(fugitive_methane_emissions_MtCH4)
+
+xbar_boot_2  <- replicate(10000, {
+  fugi_data_oil_resample <- sample(fugi_data_oil, 
+                                       replace = TRUE)
+  mean(fugi_data_oil_resample)
+})
+
+```
+
+```{r}
+xbar_diff <- xbar_boot_1-xbar_boot_2
+quantile(xbar_diff, c(0.025, 0.975))
+```
+
+```{r}
+ggplot(data.frame(xbar_diff), aes(x = xbar_diff)) +
+  geom_histogram(bins=20) +
+  geom_vline(xintercept = c(.2302, .6960), col = "blue")+
+  ggtitle("95% Confidence interval of the difference of mean fugitive methane emissions")
+```
+The confidence interval calculated allows us to estimate the mean difference of fugitive methane emissions between natural gas plants and OIl & NG plants.
+
+Specifically, we are 95% confident that the mean difference of fugitive methane emissions is between .2301867 and .6960284 million metric tons.
+
+
+
+Question 7. Given an entity's total co2 emissions or fugitive methane emissions, predict whether it came from a natural gas or oil & ngl plant. 
+
+
+
+```{r}
+emissions_data3 <- emissions_data_24 %>% filter(commodity == "Natural Gas" | commodity == "Oil & NGL")
+
+mean_length <- mean(emissions_data3$total_emissions_MtCO2e)
+sd_length <- sd(emissions_data3$total_emissions_MtCO2e)
+emissions_data3$norm_co2 <- (emissions_data3$total_emissions_MtCO2e-mean_length)/sd_length
+
+set.seed(10)
+
+training_indices = createDataPartition(emissions_data3$norm_co2,p = 0.80,list = FALSE)
+
+train_set <- emissions_data3[training_indices, ]
+test_set <- emissions_data3[-training_indices, ]
+
+naive_classifier_co2 = train(form = commodity ~ norm_co2,
+                           data = train_set,
+                           trControl = trainControl(method = "cv", number = 5),
+                           method = "naive_bayes")
+
+naive_classifier_co2
+
+
+```
+A Kappa value of 0.032 shows that there is poor agreement between the true and predicted values, so this is not a reliable classifier.
+
+```{r}
+mean_length <- mean(emissions_data3$fugitive_methane_emissions_MtCH4)
+sd_length <- sd(emissions_data3$fugitive_methane_emissions_MtCH4)
+emissions_data3$norm_methane <- (emissions_data3$fugitive_methane_emissions_MtCH4-mean_length)/sd_length
+
+set.seed(10)
+
+training_indices = createDataPartition(emissions_data3$norm_methane,p = 0.80,list = FALSE)
+
+train_set <- emissions_data3[training_indices, ]
+test_set <- emissions_data3[-training_indices, ]
+
+naive_classifier_methane = train(form = commodity ~ norm_methane,
+                           data = train_set,
+                           trControl = trainControl(method = "cv", number = 5),
+                           method = "naive_bayes")
+
+naive_classifier_methane
+```
+A Kappa value of 0.207 shows that there is fair agreement between the true and predicted values, so this classifier has some slight predictive power. Methane is more reliable than co2 emissions for identifying the plant types. 
+
+
+
+```{r}
+#classifier with multiple variables
+
+emissions_data3 <- emissions_data_24 %>% filter(commodity == "Natural Gas" | commodity == "Oil & NGL")
+
+mean_co2 <- mean(emissions_data3$total_emissions_MtCO2e)
+sd_co2 <- sd(emissions_data3$total_emissions_MtCO2e)
+emissions_data3$norm_co2 <- (emissions_data3$total_emissions_MtCO2e-mean_co2)/sd_co2
+
+mean_methane <- mean(emissions_data3$fugitive_methane_emissions_MtCH4)
+sd_methane <- sd(emissions_data3$fugitive_methane_emissions_MtCH4)
+emissions_data3$norm_methane <- (emissions_data3$fugitive_methane_emissions_MtCH4-mean_methane)/sd_methane
+
+set.seed(10)
+
+training_indices = createDataPartition(emissions_data3$norm_co2,p = 0.80,list = FALSE)
+
+train_set <- emissions_data3[training_indices, ]
+test_set <- emissions_data3[-training_indices, ]
+
+naive_classifier_co2 = train(form = commodity ~ norm_co2+norm_methane+parent_type,
+                           data = train_set,
+                           trControl = trainControl(method = "cv", number = 5),
+                           method = "naive_bayes")
+
+```
+
+```{r}
+test_set$commodity <- as.factor(test_set$commodity)
+
+naive_classifier_final <- naive_classifier_co2$finalModel
+new_emissions <- test_set[, c("norm_co2", "norm_methane", "parent_type")]
+predicted_plant <- predict(naive_classifier_final, new_emissions)
+
+cm_details <- confusionMatrix(data = predicted_plant,reference = test_set$commodity)
+
+cm_details
+```
+
+71.43% accuracy with a kappa value of 0.4186 shows there is moderate agreement and is pretty accurate at making predictions. 
+
+ 
+
+
